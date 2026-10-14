@@ -104,27 +104,36 @@ export function NapTimer() {
           <p className="text-sm uppercase tracking-widest text-white/60">
             {isActive ? "Nap in progress" : "No nap running"}
           </p>
-          <p
-            className="mt-2 font-mono text-5xl font-bold tabular-nums text-white"
-            aria-live="polite"
-          >
-            {isActive ? formatDuration(elapsedMs) : "0s"}
-          </p>
-          {!isActive && lastNapEnd !== null && (
-            <p className="mt-3 text-sm text-white/70" aria-live="polite">
-              Awake for{" "}
-              <span className="font-medium text-white tabular-nums">
-                {formatAgo(now - lastNapEnd)}
-              </span>
-              <span className="block text-xs text-white/40">
-                last nap ended{" "}
-                {new Date(lastNapEnd).toLocaleTimeString(undefined, {
-                  hour: "numeric",
-                  minute: "2-digit",
-                })}
-              </span>
+          {isActive && (
+            <p
+              className="mt-2 font-mono text-3xl font-bold tabular-nums text-white"
+              aria-live="polite"
+            >
+              {formatDuration(elapsedMs)}
             </p>
           )}
+          {!isActive &&
+            (lastNapEnd !== null ? (
+              <div className="mt-2" aria-live="polite">
+                <p className="text-xs uppercase tracking-widest text-white/50">
+                  Awake for
+                </p>
+                <p className="mt-1 font-mono text-5xl font-bold tabular-nums text-white">
+                  {formatAgo(now - lastNapEnd).replace(/ ago$/, "")}
+                </p>
+                <p className="mt-2 text-xs text-white/40">
+                  last nap ended{" "}
+                  {new Date(lastNapEnd).toLocaleTimeString(undefined, {
+                    hour: "numeric",
+                    minute: "2-digit",
+                  })}
+                </p>
+              </div>
+            ) : (
+              <p className="mt-2 font-mono text-3xl font-bold tabular-nums text-white/60">
+                0s
+              </p>
+            ))}
         </div>
 
         {isActive && startMs !== null && (
