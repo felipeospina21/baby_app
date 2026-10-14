@@ -1,0 +1,1 @@
+DROP TABLE "baby_app_post" CASCADE;
