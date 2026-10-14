@@ -170,3 +170,31 @@ export function useNapSync() {
     flush,
   };
 }
+
+/**
+ * The end time (ms since epoch) of the most recently *ended* nap, considering
+ * both unsynced naps in the local outbox and naps already on the server.
+ * Returns null when no completed nap exists yet.
+ */
+export function useLastNapEnd(): number | null {
+  const pending = usePendingNaps();
+  const historyQuery = api.nap.getHistory.useQuery(
+    { limit: 30 },
+    { retry: false },
+  );
+
+  let latest: number | null = null;
+
+  for (const n of pending) {
+    const end = new Date(n.endTime).getTime();
+    if (Number.isFinite(end) && (latest === null || end > latest)) latest = end;
+  }
+
+  for (const nap of historyQuery.data ?? []) {
+    if (!nap.endTime) continue;
+    const end = new Date(nap.endTime).getTime();
+    if (Number.isFinite(end) && (latest === null || end > latest)) latest = end;
+  }
+
+  return latest;
+}

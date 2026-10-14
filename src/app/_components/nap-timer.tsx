@@ -2,8 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 
-import { formatDuration, toDateTimeLocal } from "./nap-utils";
-import { enqueueNap } from "./use-nap-sync";
+import { formatAgo, formatDuration, toDateTimeLocal } from "./nap-utils";
+import { enqueueNap, useLastNapEnd } from "./use-nap-sync";
 
 const STORAGE_KEY = "baby_app.activeNapStart";
 
@@ -22,18 +22,22 @@ export function NapTimer() {
   const [startMs, setStartMs] = useState<number | null>(null);
   const [now, setNow] = useState(() => Date.now());
 
+  // The end time of the most recent completed nap (null if none yet).
+  const lastNapEnd = useLastNapEnd();
+
   // Hydrate from localStorage on mount (client only).
   useEffect(() => {
     setStartMs(readStoredStart());
   }, []);
 
-  // Tick every second while a nap is running.
+  // Tick every second. While a nap is running this drives the elapsed timer;
+  // while idle it keeps the "time since last nap ended" label fresh.
   useEffect(() => {
-    if (startMs === null) return;
+    if (startMs === null && lastNapEnd === null) return;
     setNow(Date.now());
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
-  }, [startMs]);
+  }, [startMs, lastNapEnd]);
 
   const [editingStart, setEditingStart] = useState(false);
   const [startDraft, setStartDraft] = useState("");
@@ -106,6 +110,21 @@ export function NapTimer() {
           >
             {isActive ? formatDuration(elapsedMs) : "0s"}
           </p>
+          {!isActive && lastNapEnd !== null && (
+            <p className="mt-3 text-sm text-white/70" aria-live="polite">
+              Awake for{" "}
+              <span className="font-medium text-white tabular-nums">
+                {formatAgo(now - lastNapEnd)}
+              </span>
+              <span className="block text-xs text-white/40">
+                last nap ended{" "}
+                {new Date(lastNapEnd).toLocaleTimeString(undefined, {
+                  hour: "numeric",
+                  minute: "2-digit",
+                })}
+              </span>
+            </p>
+          )}
         </div>
 
         {isActive && startMs !== null && (
