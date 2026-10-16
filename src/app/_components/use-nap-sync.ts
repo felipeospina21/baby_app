@@ -3,6 +3,10 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 import { api } from "~/trpc/react";
+import {
+  getOutboxByKind,
+  removeOutbox as removeIdbOutbox,
+} from "./active-session-store";
 
 /**
  * A completed nap captured on the client. It lives in localStorage until it is
@@ -134,7 +138,11 @@ export function useNapSync() {
     if (typeof navigator !== "undefined" && !navigator.onLine) return;
 
     const unsynced = readOutbox().filter((n) => !n.synced);
-    if (unsynced.length === 0) return;
+    // Naps stopped from the lock screen are enqueued by the service worker into
+    // the shared IndexedDB outbox (which it can access, unlike localStorage).
+    // Drain those here too so lock-screen stops reach the server.
+    const idbNaps = (await getOutboxByKind("nap")).filter((n) => !n.synced);
+    if (unsynced.length === 0 && idbNaps.length === 0) return;
 
     flushing.current = true;
     try {
@@ -149,6 +157,18 @@ export function useNapSync() {
           removeNap(nap.clientId);
         } catch {
           // Network/server error: stop and retry on the next trigger.
+          break;
+        }
+      }
+      for (const nap of idbNaps) {
+        try {
+          await create.mutateAsync({
+            startTime: new Date(nap.startTime),
+            endTime: new Date(nap.endTime),
+            note: nap.note ?? undefined,
+          });
+          await removeIdbOutbox(nap.clientId);
+        } catch {
           break;
         }
       }

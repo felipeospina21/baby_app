@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 
+import { ModuleNav } from "~/app/_components/module-nav";
 import { NapHistory } from "~/app/_components/nap-history";
 import { NapTimer } from "~/app/_components/nap-timer";
 import { SignOutButton } from "~/app/_components/sign-out-button";
@@ -32,6 +33,7 @@ export default async function Home() {
             <SignOutButton />
           </header>
 
+          <ModuleNav />
           <NapTimer />
           <NapHistory />
         </div>

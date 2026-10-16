@@ -41,6 +41,72 @@ export const napsRelations = relations(naps, ({ one }) => ({
   user: one(users, { fields: [naps.userId], references: [users.id] }),
 }));
 
+/**
+ * A night-sleep session. Like a nap it has a start and a (nullable while
+ * running) end, but it additionally owns a set of "splits" — wake-up intervals
+ * recorded without stopping the clock. See docs/lock-screen-and-sleep.md.
+ */
+export const sleepSessions = createTable(
+  "sleep_session",
+  (d) => ({
+    id: d.integer().primaryKey().generatedByDefaultAsIdentity(),
+    userId: d
+      .varchar({ length: 255 })
+      .notNull()
+      .references(() => users.id),
+    startTime: d.timestamp({ withTimezone: true }).notNull(),
+    endTime: d.timestamp({ withTimezone: true }),
+    note: d.varchar({ length: 256 }),
+    createdAt: d
+      .timestamp({ withTimezone: true })
+      .$defaultFn(() => /* @__PURE__ */ new Date())
+      .notNull(),
+    updatedAt: d.timestamp({ withTimezone: true }).$onUpdate(() => new Date()),
+  }),
+  (t) => [
+    index("sleep_session_start_time_idx").on(t.startTime),
+    index("sleep_session_user_id_idx").on(t.userId),
+  ],
+);
+
+/**
+ * A wake-up interval within a sleep session. `startTime` is when the baby woke;
+ * `endTime` is when they resettled (null if still awake when the session was
+ * stopped). Deleting a session cascades to its splits.
+ */
+export const sleepSplits = createTable(
+  "sleep_split",
+  (d) => ({
+    id: d.integer().primaryKey().generatedByDefaultAsIdentity(),
+    sessionId: d
+      .integer()
+      .notNull()
+      .references(() => sleepSessions.id, { onDelete: "cascade" }),
+    startTime: d.timestamp({ withTimezone: true }).notNull(),
+    endTime: d.timestamp({ withTimezone: true }),
+    note: d.varchar({ length: 256 }),
+  }),
+  (t) => [index("sleep_split_session_id_idx").on(t.sessionId)],
+);
+
+export const sleepSessionsRelations = relations(
+  sleepSessions,
+  ({ one, many }) => ({
+    user: one(users, {
+      fields: [sleepSessions.userId],
+      references: [users.id],
+    }),
+    splits: many(sleepSplits),
+  }),
+);
+
+export const sleepSplitsRelations = relations(sleepSplits, ({ one }) => ({
+  session: one(sleepSessions, {
+    fields: [sleepSplits.sessionId],
+    references: [sleepSessions.id],
+  }),
+}));
+
 export const users = createTable("user", (d) => ({
   id: d
     .varchar({ length: 255 })

@@ -1,5 +1,6 @@
 import { authRouter } from "~/server/api/routers/auth";
 import { napRouter } from "~/server/api/routers/nap";
+import { sleepRouter } from "~/server/api/routers/sleep";
 import { createCallerFactory, createTRPCRouter } from "~/server/api/trpc";
 
 /**
@@ -9,6 +10,7 @@ import { createCallerFactory, createTRPCRouter } from "~/server/api/trpc";
  */
 export const appRouter = createTRPCRouter({
   nap: napRouter,
+  sleep: sleepRouter,
   auth: authRouter,
 });
 

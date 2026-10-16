@@ -1,9 +1,18 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
+import {
+  clearActiveSession,
+  getActiveSession,
+  migrateLegacyNapOutbox,
+  newClientId,
+  setActiveSession,
+} from "./active-session-store";
+import { LockScreenPrompt } from "./lock-screen-prompt";
 import { formatAgo, formatDuration, toDateTimeLocal } from "./nap-utils";
 import { enqueueNap, useLastNapEnd } from "./use-nap-sync";
+import { useLockScreen, type SwSessionMessage } from "./use-lock-screen";
 
 const STORAGE_KEY = "baby_app.activeNapStart";
 
@@ -25,9 +34,53 @@ export function NapTimer() {
   // The end time of the most recent completed nap (null if none yet).
   const lastNapEnd = useLastNapEnd();
 
+  // Lock-screen integration. When a nap is stopped from the lock screen the SW
+  // posts "session-stopped"; we re-read IndexedDB and sync the local UI.
+  const onSwMessage = useCallback((msg: SwSessionMessage) => {
+    if (msg.kind !== "nap") return;
+    if (msg.type === "session-stopped") {
+      // The SW already enqueued the completed nap to the IDB outbox and cleared
+      // the active session. Clear the in-app running state to match.
+      persistStartRef.current?.(null);
+    }
+  }, []);
+  const lockScreen = useLockScreen(onSwMessage);
+  // Stable id for the currently running nap, carried into the SW/outbox.
+  const clientIdRef = useRef<string | null>(null);
+  // Indirection so the SW-message callback can clear state without depending
+  // on persistStart (declared below).
+  const persistStartRef = useRef<((ms: number | null) => void) | null>(null);
+
+  // Migrate any legacy localStorage nap outbox into IndexedDB once on mount, so
+  // the service worker can see/flush pending items.
+  useEffect(() => {
+    void migrateLegacyNapOutbox();
+  }, []);
+
   // Hydrate from localStorage on mount (client only).
   useEffect(() => {
     setStartMs(readStoredStart());
+  }, []);
+
+  // Reconcile with IndexedDB when the app regains focus — e.g. after a Stop was
+  // performed from the lock screen while the phone was locked.
+  useEffect(() => {
+    const reconcile = async () => {
+      const active = await getActiveSession();
+      if (active?.kind !== "nap") {
+        // No active nap in the shared store: ensure the UI is idle too.
+        if (readStoredStart() !== null) persistStartRef.current?.(null);
+      }
+    };
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void reconcile();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onVisible);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onVisible);
+    };
   }, []);
 
   // Tick every second. While a nap is running this drives the elapsed timer;
@@ -52,10 +105,27 @@ export function NapTimer() {
     if (ms === null) window.localStorage.removeItem(STORAGE_KEY);
     else window.localStorage.setItem(STORAGE_KEY, String(ms));
   };
+  // Expose persistStart to the mount-time effects/callbacks above.
+  persistStartRef.current = persistStart;
 
   const startNap = () => {
-    persistStart(Date.now());
-    setNow(Date.now());
+    const start = Date.now();
+    persistStart(start);
+    setNow(start);
+    // Mirror the active session into IndexedDB and raise the lock-screen
+    // notification (Stop + Refresh). All best-effort / no-op when unsupported.
+    const clientId = newClientId();
+    clientIdRef.current = clientId;
+    void (async () => {
+      await setActiveSession({
+        kind: "nap",
+        clientId,
+        startMs: start,
+        note: null,
+        splits: [],
+      });
+      await lockScreen.showNotification();
+    })();
   };
 
   const stopNap = () => {
@@ -67,14 +137,17 @@ export function NapTimer() {
     // Local-first: queue the completed nap. The sync engine persists it to the
     // server now (if online) or later (on reconnect). Works fully offline.
     enqueueNap({
-      clientId:
-        typeof crypto !== "undefined" && "randomUUID" in crypto
-          ? crypto.randomUUID()
-          : `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      clientId: clientIdRef.current ?? newClientId(),
       startTime: start.toISOString(),
       endTime: end.toISOString(),
       note: null,
     });
+    clientIdRef.current = null;
+    // Tear down the shared active session + lock-screen notification.
+    void (async () => {
+      await clearActiveSession();
+      await lockScreen.clearNotification();
+    })();
   };
 
   const beginEditStart = () => {
@@ -93,6 +166,21 @@ export function NapTimer() {
     if (Number.isFinite(edited)) {
       persistStart(edited);
       setNow(Date.now());
+      // Keep the shared active session + lock-screen notification in sync with
+      // the adjusted start time.
+      if (clientIdRef.current) {
+        const clientId = clientIdRef.current;
+        void (async () => {
+          await setActiveSession({
+            kind: "nap",
+            clientId,
+            startMs: edited,
+            note: null,
+            splits: [],
+          });
+          await lockScreen.showNotification();
+        })();
+      }
     }
     setEditingStart(false);
   };
@@ -100,6 +188,21 @@ export function NapTimer() {
   return (
     <section className="w-full max-w-md rounded-2xl bg-white/10 p-6 shadow-lg backdrop-blur">
       <div className="flex flex-col items-center gap-5">
+        {lockScreen.isSupported && (
+          <LockScreenPrompt
+            permission={lockScreen.permission}
+            onEnable={() => {
+              void (async () => {
+                const result = await lockScreen.requestPermission();
+                // If granted while a nap is already running, raise the
+                // notification immediately.
+                if (result === "granted" && startMs !== null) {
+                  await lockScreen.showNotification();
+                }
+              })();
+            }}
+          />
+        )}
         <div className="text-center">
           <p className="text-sm uppercase tracking-widest text-white/60">
             {isActive ? "Nap in progress" : "No nap running"}

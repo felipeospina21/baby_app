@@ -22,6 +22,13 @@
       "when": 1792002280577,
       "tag": "0002_plain_hercules",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1792180528716,
+      "tag": "0003_common_inhumans",
+      "breakpoints": true
     }
   ]
 }

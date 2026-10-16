@@ -56,3 +56,18 @@ export function formatTime(date: Date): string {
     minute: "2-digit",
   });
 }
+
+/**
+ * Convert a Date to a local `YYYY-MM-DD` string — the value format used by
+ * <input type="date"> and suitable for comparing calendar days in the user's
+ * local timezone (avoids the UTC shift of `toISOString().slice(0,10)`).
+ */
+export function toDateInputValue(date: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+/** True when `date` falls on the given local `YYYY-MM-DD` day string. */
+export function isOnLocalDay(date: Date, day: string): boolean {
+  return toDateInputValue(date) === day;
+}

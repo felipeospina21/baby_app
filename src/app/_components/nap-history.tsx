@@ -1,9 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { api } from "~/trpc/react";
-import { formatDay, formatDuration, formatTime, toDateTimeLocal } from "./nap-utils";
+import {
+  formatDay,
+  formatDuration,
+  formatTime,
+  isOnLocalDay,
+  toDateInputValue,
+  toDateTimeLocal,
+} from "./nap-utils";
 import { useNapSync } from "./use-nap-sync";
 
 /** A unified row for the grid, from either the server or the local outbox. */
@@ -23,9 +30,10 @@ export function NapHistory() {
   const { pending, online, pendingCount } = useNapSync();
 
   // Offline-tolerant: a plain query (not suspense) so a failed fetch while
-  // offline still renders the local/pending naps instead of crashing.
+  // offline still renders the local/pending naps instead of crashing. Fetch a
+  // larger window than we display so the date filter has history to work with.
   const historyQuery = api.nap.getHistory.useQuery(
-    { limit: 30 },
+    { limit: 100 },
     { retry: false },
   );
 
@@ -40,6 +48,17 @@ export function NapHistory() {
   const [startDraft, setStartDraft] = useState("");
   const [endDraft, setEndDraft] = useState("");
   const [noteDraft, setNoteDraft] = useState("");
+
+  // Date filter. Defaults to today (local). An empty string means "all dates".
+  // Resolve "today" after mount to avoid any SSR/client timezone or midnight
+  // boundary hydration mismatch on the date input.
+  const [filterDay, setFilterDay] = useState<string>("");
+  const [today, setToday] = useState<string>("");
+  useEffect(() => {
+    const t = toDateInputValue(new Date());
+    setToday(t);
+    setFilterDay(t);
+  }, []);
 
   // Build the merged, de-duplicated, newest-first list.
   const serverRows: Row[] = (historyQuery.data ?? []).map((nap) => ({
@@ -66,6 +85,15 @@ export function NapHistory() {
 
   const rows = [...pendingRows, ...serverRows].sort(
     (a, b) => b.startTime.getTime() - a.startTime.getTime(),
+  );
+
+  // Apply the date filter (by the nap's local start day). Empty filter => all.
+  const visibleRows = useMemo(
+    () =>
+      filterDay
+        ? rows.filter((r) => isOnLocalDay(r.startTime, filterDay))
+        : rows,
+    [rows, filterDay],
   );
 
   const beginEdit = (row: Row) => {
@@ -105,9 +133,44 @@ export function NapHistory() {
         </div>
       </div>
 
-      {rows.length === 0 ? (
+      {/* Date filter — defaults to today; clear to show all dates. */}
+      <div className="mb-3 flex flex-wrap items-center gap-2 text-sm">
+        <input
+          type="date"
+          value={filterDay}
+          max={today}
+          onChange={(e) => setFilterDay(e.target.value)}
+          aria-label="Filter naps by date"
+          className="rounded-md bg-white/10 px-2 py-1 text-white"
+        />
+        <button
+          onClick={() => setFilterDay(today)}
+          disabled={filterDay === today}
+          className="rounded-full bg-white/10 px-3 py-1 text-xs text-white transition hover:bg-white/20 disabled:opacity-40"
+        >
+          Today
+        </button>
+        <button
+          onClick={() => setFilterDay("")}
+          disabled={filterDay === ""}
+          className="rounded-full bg-white/10 px-3 py-1 text-xs text-white transition hover:bg-white/20 disabled:opacity-40"
+        >
+          All dates
+        </button>
+        {filterDay !== "" && (
+          <span className="ml-auto text-xs text-white/40">
+            {visibleRows.length} nap{visibleRows.length === 1 ? "" : "s"}
+          </span>
+        )}
+      </div>
+
+      {visibleRows.length === 0 ? (
         <p className="text-center text-white/60">
-          No naps recorded yet. Start the timer above to log one.
+          {rows.length === 0
+            ? "No naps recorded yet. Start the timer above to log one."
+            : filterDay === today
+              ? "No naps recorded for today yet."
+              : "No naps on this date."}
         </p>
       ) : (
         <div className="overflow-hidden rounded-xl border border-white/10">
@@ -122,7 +185,7 @@ export function NapHistory() {
               </tr>
             </thead>
             <tbody>
-              {rows.map((row) => {
+              {visibleRows.map((row) => {
                 const durationMs =
                   row.endTime.getTime() - row.startTime.getTime();
                 const isEditing = row.id !== null && editingId === row.id;
