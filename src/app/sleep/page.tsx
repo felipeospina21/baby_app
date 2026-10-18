@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import Link from "next/link";
 
 import { ModuleNav } from "~/app/_components/module-nav";
 import { SignOutButton } from "~/app/_components/sign-out-button";
@@ -34,6 +35,12 @@ export default async function SleepPage() {
           </header>
 
           <ModuleNav />
+          <Link
+            href="/sleep/dashboard"
+            className="self-end text-sm text-white/60 underline decoration-dotted underline-offset-2 hover:text-white"
+          >
+            View dashboard →
+          </Link>
           <SleepTimer />
           <SleepHistory />
         </div>
