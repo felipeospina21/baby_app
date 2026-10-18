@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import Link from "next/link";
 
 import { ModuleNav } from "~/app/_components/module-nav";
 import { NapHistory } from "~/app/_components/nap-history";
@@ -34,6 +35,12 @@ export default async function Home() {
           </header>
 
           <ModuleNav />
+          <Link
+            href="/dashboard"
+            className="self-end text-sm text-white/60 underline decoration-dotted underline-offset-2 hover:text-white"
+          >
+            View dashboard →
+          </Link>
           <NapTimer />
           <NapHistory />
         </div>

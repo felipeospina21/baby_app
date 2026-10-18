@@ -36,7 +36,7 @@ export default async function SleepPage() {
 
           <ModuleNav />
           <Link
-            href="/sleep/dashboard"
+            href="/dashboard"
             className="self-end text-sm text-white/60 underline decoration-dotted underline-offset-2 hover:text-white"
           >
             View dashboard →
