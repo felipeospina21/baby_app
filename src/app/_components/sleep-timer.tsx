@@ -90,6 +90,23 @@ export function SleepTimer() {
   const metrics = sleepMetrics(startMs ?? now, now, splits);
   const openWake = splits.find((s) => s.endMs === null) ?? null;
 
+  // The "current stretch" drives the primary timer:
+  //  - awake: counts up from the open wake's start.
+  //  - asleep: counts up from the last wake's end (or the session start if the
+  //    baby hasn't woken yet).
+  const lastClosedEnd = splits.reduce<number | null>(
+    (latest, s) =>
+      s.endMs !== null && (latest === null || s.endMs > latest)
+        ? s.endMs
+        : latest,
+    null,
+  );
+  const stretchAwake = openWake !== null;
+  const stretchStartMs = stretchAwake
+    ? openWake.startMs
+    : (lastClosedEnd ?? startMs ?? now);
+  const stretchMs = Math.max(0, now - stretchStartMs);
+
   const startSleep = () => {
     const start = Date.now();
     const clientId = newClientId();
@@ -170,20 +187,34 @@ export function SleepTimer() {
           </p>
           {isActive ? (
             <>
+              <p className="mt-2 text-xs uppercase tracking-widest text-white/50">
+                {stretchAwake ? "Awake for" : "Asleep for"}
+              </p>
               <p
-                className="mt-2 font-mono text-4xl font-bold tabular-nums text-white"
+                className={`mt-1 font-mono text-5xl font-bold tabular-nums ${
+                  stretchAwake ? "text-amber-300" : "text-white"
+                }`}
                 aria-live="polite"
               >
-                {formatDuration(metrics.totalMs)}
+                {formatDuration(stretchMs)}
               </p>
               <p className="mt-1 text-xs text-white/50">
+                {stretchAwake
+                  ? `woke at ${formatTime(new Date(stretchStartMs))}`
+                  : lastClosedEnd !== null
+                    ? `resettled at ${formatTime(new Date(stretchStartMs))}`
+                    : `fell asleep at ${formatTime(new Date(stretchStartMs))}`}
+              </p>
+              {/* Secondary: total accumulated night time. */}
+              <div className="mt-3 inline-flex items-baseline gap-2 rounded-full bg-white/5 px-3 py-1">
+                <span className="text-xs text-white/50">Total night</span>
+                <span className="font-mono text-sm font-semibold tabular-nums text-white/80">
+                  {formatDuration(metrics.totalMs)}
+                </span>
+              </div>
+              <p className="mt-1 text-xs text-white/40">
                 started {formatTime(new Date(startMs))}
               </p>
-              {openWake && (
-                <p className="mt-2 inline-block rounded-full bg-amber-500/20 px-3 py-1 text-sm text-amber-300">
-                  Awake now — {formatDuration(now - openWake.startMs)}
-                </p>
-              )}
             </>
           ) : (
             <p className="mt-2 font-mono text-3xl font-bold tabular-nums text-white/60">

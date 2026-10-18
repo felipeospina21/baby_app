@@ -166,22 +166,45 @@ export function SleepHistory() {
                               const se = split.endTime
                                 ? new Date(split.endTime)
                                 : null;
+                              // Asleep stretch before this wake: from the end
+                              // of the previous wake (or session start for the
+                              // first) to the start of this wake.
+                              const prev = session.splits[i - 1];
+                              const prevEnd = prev?.endTime
+                                ? new Date(prev.endTime)
+                                : i === 0
+                                  ? start
+                                  : null;
+                              const gapMs = prevEnd
+                                ? ss.getTime() - prevEnd.getTime()
+                                : null;
                               return (
-                                <li
-                                  key={split.id}
-                                  className="flex justify-between"
-                                >
-                                  <span>
-                                    Wake #{i + 1} · {formatTime(ss)}
-                                  </span>
-                                  <span className="tabular-nums text-white/50">
-                                    {se
-                                      ? formatDuration(
-                                          se.getTime() - ss.getTime(),
-                                        )
-                                      : "—"}
-                                  </span>
-                                </li>
+                                <Fragment key={split.id}>
+                                  {gapMs !== null && (
+                                    <li className="flex justify-between text-white/40">
+                                      <span>
+                                        {i === 0
+                                          ? "Asleep before first wake"
+                                          : "Asleep since previous wake"}
+                                      </span>
+                                      <span className="tabular-nums">
+                                        {formatDuration(gapMs)}
+                                      </span>
+                                    </li>
+                                  )}
+                                  <li className="flex justify-between">
+                                    <span>
+                                      Wake #{i + 1} · {formatTime(ss)}
+                                    </span>
+                                    <span className="tabular-nums text-white/50">
+                                      {se
+                                        ? formatDuration(
+                                            se.getTime() - ss.getTime(),
+                                          )
+                                        : "—"}
+                                    </span>
+                                  </li>
+                                </Fragment>
                               );
                             })}
                           </ul>
