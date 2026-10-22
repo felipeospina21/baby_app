@@ -2,14 +2,21 @@
  *
  * Strategy:
  *  - Precache a minimal offline fallback page and icons on install.
- *  - Navigations: network-first, falling back to a cached offline page so the
- *    app shell still loads with no connection (the timer runs client-side).
+ *  - Navigations: network-first; successful HTML responses are cached as the
+ *    "app shell". With no connection we serve the cached shell for the
+ *    requested route (or the last cached app page) so a COLD launch boots the
+ *    real React app — which runs fully client-side (local-first timers) — and
+ *    only drops to the static offline page if nothing is cached yet.
  *  - Static assets (Next.js /_next/static, icons): cache-first (immutable).
  *  - API/tRPC and auth requests are never cached (always hit the network).
  */
 
-const CACHE = "baby-app-v1";
+const CACHE = "baby-app-v2";
 const OFFLINE_URL = "/offline.html";
+// Navigable app routes to warm into the shell cache on install, so the app can
+// cold-launch offline even before the user has visited them online this SW
+// generation. These are same-origin GET navigations.
+const APP_SHELL_ROUTES = ["/", "/sleep", "/dashboard"];
 const PRECACHE = [OFFLINE_URL, "/manifest.webmanifest", "/icon.svg"];
 
 /* ================================================================== */
@@ -246,7 +253,26 @@ async function notifyClients(message) {
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches.open(CACHE).then((cache) => cache.addAll(PRECACHE)),
+    (async () => {
+      const cache = await caches.open(CACHE);
+      // Required assets — must all succeed.
+      await cache.addAll(PRECACHE);
+      // App-shell routes — best-effort. We only cache a genuine HTML page
+      // (status 200, not an opaque/auth redirect) so the offline cold launch
+      // boots the real app. Failures here must not abort the install.
+      await Promise.all(
+        APP_SHELL_ROUTES.map(async (route) => {
+          try {
+            const res = await fetch(route, { credentials: "same-origin" });
+            if (res.ok && res.type === "basic") {
+              await cache.put(route, res.clone());
+            }
+          } catch {
+            /* offline during install, or route unavailable — ignore. */
+          }
+        }),
+      );
+    })(),
   );
   self.skipWaiting();
 });
@@ -329,10 +355,40 @@ self.addEventListener("fetch", (event) => {
   // Never cache dynamic app data or auth — these must be live.
   if (url.pathname.startsWith("/api/")) return;
 
-  // Navigations: try network, fall back to the cached offline shell.
+  // Navigations: network-first, caching the fetched app shell so a later cold
+  // launch with no connection can boot the real app. Offline, we serve the
+  // cached shell for this route (or any cached app page) and only drop to the
+  // static offline page when nothing usable is cached yet.
   if (request.mode === "navigate") {
     event.respondWith(
-      fetch(request).catch(() => caches.match(OFFLINE_URL)),
+      (async () => {
+        try {
+          const response = await fetch(request);
+          // Cache only successful same-origin HTML (not login/auth redirects).
+          if (response.ok && response.type === "basic") {
+            const copy = response.clone();
+            caches.open(CACHE).then((cache) => cache.put(request, copy));
+          }
+          return response;
+        } catch {
+          const cache = await caches.open(CACHE);
+          // 1) Exact cached route (ignore the search string so query params
+          //    don't cause a miss).
+          const exact = await cache.match(request, { ignoreSearch: true });
+          if (exact) return exact;
+          // 2) The route's pathname as an app-shell key.
+          const byPath = await cache.match(url.pathname);
+          if (byPath) return byPath;
+          // 3) Any cached app-shell route — the React app can client-route from
+          //    there once it boots.
+          for (const route of APP_SHELL_ROUTES) {
+            const shell = await cache.match(route);
+            if (shell) return shell;
+          }
+          // 4) Last resort: the static offline page.
+          return (await cache.match(OFFLINE_URL)) ?? Response.error();
+        }
+      })(),
     );
     return;
   }

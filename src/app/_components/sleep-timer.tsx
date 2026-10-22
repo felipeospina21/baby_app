@@ -251,10 +251,10 @@ export function SleepTimer() {
         {isActive && (
           <button
             onClick={markSplit}
-            className={`w-full rounded-full px-8 py-4 text-lg font-semibold text-white transition ${
+            className={`w-full rounded-full border px-8 py-4 text-lg font-semibold transition ${
               openWake
-                ? "bg-amber-500 hover:bg-amber-600"
-                : "bg-sky-500 hover:bg-sky-600"
+                ? "border-amber-300/40 bg-amber-400/5 text-amber-200/90 hover:border-amber-300/70 hover:bg-amber-400/10"
+                : "border-violet-300/40 bg-violet-400/5 text-violet-200/90 hover:border-violet-300/70 hover:bg-violet-400/10"
             }`}
           >
             {openWake ? "Mark resettled" : "Mark wake-up"}
@@ -288,14 +288,14 @@ export function SleepTimer() {
             onClick={() => {
               if (confirm("End the night sleep session?")) stopSleep();
             }}
-            className="w-full rounded-full bg-rose-500 px-8 py-3 text-base font-semibold text-white transition hover:bg-rose-600"
+            className="w-full rounded-full border border-rose-300/40 bg-rose-400/5 px-8 py-3 text-base font-semibold text-rose-200/90 transition hover:border-rose-300/70 hover:bg-rose-400/10"
           >
             Stop sleep
           </button>
         ) : (
           <button
             onClick={startSleep}
-            className="w-full rounded-full bg-emerald-500 px-8 py-4 text-lg font-semibold text-white transition hover:bg-emerald-600"
+            className="w-full rounded-full border border-emerald-300/40 bg-emerald-400/5 px-8 py-4 text-lg font-semibold text-emerald-200/90 transition hover:border-emerald-300/70 hover:bg-emerald-400/10"
           >
             Start night sleep
           </button>

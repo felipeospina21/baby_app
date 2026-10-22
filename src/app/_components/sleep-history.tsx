@@ -4,7 +4,12 @@ import { useState } from "react";
 import { Fragment } from "react";
 
 import { api } from "~/trpc/react";
-import { formatDay, formatDuration, formatTime } from "./nap-utils";
+import {
+  formatDay,
+  formatDuration,
+  formatTime,
+  toDateTimeLocal,
+} from "./nap-utils";
 import { useSleepSync } from "./use-sleep-sync";
 
 /** Count a session's wake-ups and total asleep time from its splits. */
@@ -39,15 +44,47 @@ export function SleepHistory() {
     { retry: false },
   );
 
-  const remove = api.sleep.delete.useMutation({
-    onSuccess: async () => {
-      await utils.sleep.getHistory.invalidate();
-    },
-  });
+  const refresh = async () => {
+    await utils.sleep.getHistory.invalidate();
+  };
+
+  const update = api.sleep.update.useMutation({ onSuccess: refresh });
+  const remove = api.sleep.delete.useMutation({ onSuccess: refresh });
 
   const [expanded, setExpanded] = useState<number | null>(null);
 
+  // Inline editing of a session's top-level times/note (splits are not edited
+  // here — the server's sleep.update only touches start/end/note).
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [startDraft, setStartDraft] = useState("");
+  const [endDraft, setEndDraft] = useState("");
+  const [noteDraft, setNoteDraft] = useState("");
+
   const serverSessions = historyQuery.data ?? [];
+
+  const beginEdit = (
+    id: number,
+    start: Date,
+    end: Date,
+    note: string | null,
+  ) => {
+    setEditingId(id);
+    setExpanded(null);
+    setStartDraft(toDateTimeLocal(start));
+    setEndDraft(toDateTimeLocal(end));
+    setNoteDraft(note ?? "");
+  };
+
+  const saveEdit = (id: number) => {
+    if (!startDraft || !endDraft) return;
+    update.mutate({
+      id,
+      startTime: new Date(startDraft),
+      endTime: new Date(endDraft),
+      note: noteDraft.trim() ? noteDraft.trim() : null,
+    });
+    setEditingId(null);
+  };
 
   return (
     <section className="w-full max-w-md">
@@ -114,6 +151,72 @@ export function SleepHistory() {
                 const end = new Date(session.endTime ?? session.startTime);
                 const s = summarize(start, end, session.splits);
                 const isOpen = expanded === session.id;
+                const isEditing = editingId === session.id;
+
+                if (isEditing) {
+                  return (
+                    <tr
+                      key={session.id}
+                      className="border-t border-white/10 bg-white/5"
+                    >
+                      <td colSpan={4} className="px-3 py-3">
+                        <div className="flex flex-col gap-2">
+                          <label className="flex items-center justify-between gap-2 text-xs text-white/60">
+                            Start
+                            <input
+                              type="datetime-local"
+                              value={startDraft}
+                              onChange={(e) => setStartDraft(e.target.value)}
+                              className="rounded-md bg-white/10 px-2 py-1 text-white"
+                            />
+                          </label>
+                          <label className="flex items-center justify-between gap-2 text-xs text-white/60">
+                            End
+                            <input
+                              type="datetime-local"
+                              value={endDraft}
+                              onChange={(e) => setEndDraft(e.target.value)}
+                              className="rounded-md bg-white/10 px-2 py-1 text-white"
+                            />
+                          </label>
+                          <label className="flex items-center justify-between gap-2 text-xs text-white/60">
+                            Note
+                            <input
+                              type="text"
+                              value={noteDraft}
+                              maxLength={256}
+                              placeholder="optional"
+                              onChange={(e) => setNoteDraft(e.target.value)}
+                              className="w-40 rounded-md bg-white/10 px-2 py-1 text-white"
+                            />
+                          </label>
+                          <p className="text-xs text-white/35">
+                            Editing the night&apos;s start and end times. Wake-up
+                            splits are kept as recorded.
+                          </p>
+                          <div className="mt-1 flex justify-end gap-2">
+                            <button
+                              onClick={() => saveEdit(session.id)}
+                              disabled={
+                                update.isPending || !startDraft || !endDraft
+                              }
+                              className="rounded-md border border-emerald-300/40 bg-emerald-400/5 px-3 py-1 text-xs font-medium text-emerald-200/90 hover:border-emerald-300/70 hover:bg-emerald-400/10 disabled:opacity-50"
+                            >
+                              Save
+                            </button>
+                            <button
+                              onClick={() => setEditingId(null)}
+                              className="rounded-md bg-white/10 px-3 py-1 text-xs text-white hover:bg-white/20"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                }
+
                 return (
                   <Fragment key={session.id}>
                     <tr className="border-t border-white/10">
@@ -142,6 +245,14 @@ export function SleepHistory() {
                               {isOpen ? "Hide" : "Details"}
                             </button>
                           )}
+                          <button
+                            onClick={() =>
+                              beginEdit(session.id, start, end, session.note)
+                            }
+                            className="text-xs text-white/60 underline decoration-dotted underline-offset-2 hover:text-white"
+                          >
+                            Edit
+                          </button>
                           <button
                             onClick={() => {
                               if (confirm("Delete this sleep session?"))
